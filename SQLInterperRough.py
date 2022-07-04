@@ -1,4 +1,3 @@
-from calendar import c
 import os
 import openpyxl
 from pathlib import Path
@@ -37,8 +36,9 @@ def parseComment(c,tokens,input):
         comment_word.append(c)
         tokens.append("".join(comment_word))
 
-def wordParser(word, input, tokens):
+def wordParser(word, input, tokens, end):
     #global cont
+    ignore_bracket=False
 
     c = input.read(1)
 
@@ -51,59 +51,71 @@ def wordParser(word, input, tokens):
         word.append(c)
         next_char =input.read(1)
         if next_char =="-":
-
             while c!="\n" and c!="": #POTENTIAL FOR INFINITELOOP
-                if not c:
-                    print("End of file LINECOMMENT")
-                    break
-
                 word.append(c)
                 c=input.read(1)
 
             return
-           
-
-    #other case, where it isnt a comment
-    while c != " " and c != '\n' and c !='\t' and not c=="": #POTENTIAL FOR INFINITELOOP
-        if not c:
-            print("End of File NORMALREAD")
-            break
-        word.append(c)
-        c=input.read(1)
-
-        #edge case where there is a comment right after a character
-        if c=="-":
-            d=input.read(1)
-            if d=="-":
-                parseComment(d,tokens,input)
-            else:
-                word.append(c)
-                word.append(d)
-                c=input.read(1)
-        elif c == "\"" or c =="'":
-            parseComment(c,tokens,input)
+    elif c=="(":
+        print("START BRACKET PARSE")
+        lst_tokens=[]
+        tokenizer(lst_tokens,input,")")
+        word.append(lst_tokens)
+    else:
+        if c=="$":
+            ignore_bracket=True
+        #other case, where it isnt a comment
+        while c != " " and c != '\n' and c !='\t': #POTENTIAL FOR INFINITELOOP
+            word.append(c)
             c=input.read(1)
 
+            #edge case where there is a comment right after a character
+            if c=="-":
+                d=input.read(1)
+                if d=="-":
+                    parseComment(d,tokens,input)
+                else:
+                    word.append(c)
+                    word.append(d)
+                    c=input.read(1)
+            elif c == "\"" or c =="'":
+                parseComment(c,tokens,input)
+                c=input.read(1)
+            elif c == "$":
+                ignore_bracket=True
+            elif (c=="(" or c==")") and ignore_bracket==False:
+                input.seek(input.tell()-1)
+                c=" " ## unget c, end loop so that start of next tokenizer loop will be "("
+        
+
     
-def tokenizer(tokens, input):
+def tokenizer(tokens, input, end):
     #global cont
     cont = True
     word = []
 
     while cont:
-        wordParser(word, input, tokens)
-        c=input.read(1)
-        if c=="":
-            cont=False
-        else:
-            input.seek(input.tell()-1)
+        wordParser(word, input, tokens, end)
 
         if(word == []):
             continue
 
-        tokens.append("".join(word))
-        #print("word: "+("".join(word)))
-        word=[]
+        c=input.read(1)
+        #print("c: "+c+" || end: "+end, c==end)
+        if c==end or word[len(word)-2]==end:
+            cont=False
+            print("ENDING CONT LOOP")
+        else:
+            input.seek(input.tell()-1)
+
+        if isinstance(word[0],list):
+            tokens.append(word[0])
+            print(word[0])
+            word=[]
+        else:
+            tokens.append("".join(word))
+            print("word: "+("".join(word)))
+            word=[]
         
 
         
@@ -187,8 +199,9 @@ def searchForDBs(tokens,lookup,required_dbs,script_name,project, req_words, keyw
 
     for index in range(len(tokens)):
         token=tokens[index]
-        
-        if token =="/*":
+        if isinstance(token,list):
+            searchForDBs(token,lookup,required_dbs,script_name,project,req_words,keyword_db)
+        elif token =="/*":
             comment_out=True
             #print("/*")
         elif token =="*/":
@@ -205,51 +218,72 @@ def searchForDBs(tokens,lookup,required_dbs,script_name,project, req_words, keyw
                     #print("?? USE " + pot_working_db)
                     addNewVar("#&USEDB#&","\""+pot_working_db+"\"",lookup,comment_out)
         elif token.casefold() == "from":
-            new_entry=dbLookup(tokens[index+1],lookup)
-            if appendDupCheck(new_entry, required_dbs) and reqWordCheck(new_entry,req_words):
-                #print("!!! from: " + new_entry)
-                required_dbs.append((new_entry, comment_out, script_name, project))
-            if reqWordCheck(new_entry,req_words):
-                keyword_db.append(("from", new_entry, comment_out, script_name, project))
-            index=index+1
+            if isinstance(tokens[index+1],list):
+                keyword_db.append(("from", tokens[index+1], comment_out, script_name, project))
+            else:    
+                new_entry=dbLookup(tokens[index+1],lookup)
+                if appendDupCheck(new_entry, required_dbs) and reqWordCheck(new_entry,req_words):
+                    #print("!!! from: " + new_entry)
+                    required_dbs.append((new_entry, comment_out, script_name, project))
+                if reqWordCheck(new_entry,req_words):
+                    keyword_db.append(("from", new_entry, comment_out, script_name, project))
+                index=index+1
         elif token.casefold() == "join":
-            new_entry=dbLookup(tokens[index+1],lookup)
-            if appendDupCheck(new_entry, required_dbs) and reqWordCheck(new_entry,req_words):
-                required_dbs.append((new_entry, comment_out, script_name, project))
-            if reqWordCheck(new_entry, req_words):
-                keyword_db.append(("join",new_entry, comment_out, script_name, project))
+            if isinstance(tokens[index+1],list):
+                keyword_db.append(("join", tokens[index+1], comment_out, script_name, project))
+            else:
+                new_entry=dbLookup(tokens[index+1],lookup)
+                if appendDupCheck(new_entry, required_dbs) and reqWordCheck(new_entry,req_words):
+                    required_dbs.append((new_entry, comment_out, script_name, project))
+                if reqWordCheck(new_entry, req_words):
+                    keyword_db.append(("join",new_entry, comment_out, script_name, project))
         elif token.casefold() == "into":
-            new_entry=dbLookup(tokens[index+1],lookup)
-            if appendDupCheck(new_entry,db_blacklist):
-                #print("--- into: "+new_entry)
-                db_blacklist.append((new_entry, comment_out, script_name))
-            keyword_db.append(("into",new_entry, comment_out, script_name, project))
-            index=index+1
+            if isinstance(tokens[index+1],list):
+                keyword_db.append(("into", tokens[index+1], comment_out, script_name, project))
+            else:            
+                new_entry=dbLookup(tokens[index+1],lookup)
+                if appendDupCheck(new_entry,db_blacklist):
+                    #print("--- into: "+new_entry)
+                    db_blacklist.append((new_entry, comment_out, script_name))
+                keyword_db.append(("into",new_entry, comment_out, script_name, project))
+                index=index+1
         
         elif token.casefold() == "with":
-            if appendDupCheck(tokens[index+1],db_blacklist):
-                db_blacklist.append((removeSqBrackets(tokens[index+1]), comment_out, script_name))
-            index=index+1
-            #print("with")
+            if isinstance(tokens[index+1],list):
+                keyword_db.append(("with", tokens[index+1], comment_out, script_name, project))
+            else:
+                if appendDupCheck(tokens[index+1],db_blacklist):
+                    db_blacklist.append((removeSqBrackets(tokens[index+1]), comment_out, script_name))
+                index=index+1
+                #print("with")
         elif token.casefold() == "drop":
-            if tokens[index+1].lower() == "view" or tokens[index+1].lower() == "table":
-                if tokens[index+2].casefold() == "if" and tokens[index+3].casefold() == "exists":
-                    new_entry=dbLookup(tokens[index+4],lookup)
-                    index=index+2
-                else:
-                    new_entry=dbLookup(tokens[index+2],lookup)
-                if appendDupCheck(new_entry,db_blacklist):
-                    #print("+++ drop: "+new_entry)
-                    db_blacklist.append((new_entry, comment_out, script_name))
+            if isinstance(tokens[index+1],list):
+                continue
+            else:
+                if tokens[index+1].casefold() == "view" or tokens[index+1].casefold() == "table":
+                    if isinstance(tokens[index+2],list) or isinstance(tokens[index+3],list):
+                        continue
+                    else:
+                        if tokens[index+2].casefold() == "if" and tokens[index+3].casefold() == "exists":
+                            new_entry=dbLookup(tokens[index+4],lookup)
+                            index=index+2
+                        else:
+                            new_entry=dbLookup(tokens[index+2],lookup)
+                        if appendDupCheck(new_entry,db_blacklist):
+                            #print("+++ drop: "+new_entry)
+                            db_blacklist.append((new_entry, comment_out, script_name))
+                            index=index+1
+                        keyword_db.append(("drop", new_entry, comment_out, script_name, project))
                     index=index+1
-                keyword_db.append(("drop", new_entry, comment_out, script_name, project))
-            index=index+1
         elif token.casefold() == "update":
-            new_entry = dbLookup(tokens[index+1],lookup)
-            if appendDupCheck(new_entry,db_blacklist):
-                db_blacklist.append((new_entry, comment_out, script_name))
-            index=index+1
-            keyword_db.append(("update", new_entry, comment_out, script_name, project))
+            if isinstance(tokens[index+1],list):
+                keyword_db.append(("update", tokens[index+1], comment_out, script_name, project))
+            else:            
+                new_entry = dbLookup(tokens[index+1],lookup)
+                if appendDupCheck(new_entry,db_blacklist):
+                    db_blacklist.append((new_entry, comment_out, script_name))
+                index=index+1
+                keyword_db.append(("update", new_entry, comment_out, script_name, project))
 
 def searchtf(string, array):
     for items in array:
@@ -283,7 +317,7 @@ def scriptInterper(file_path, lookup, required_dbs, db_blacklist, project, req_w
     script_name = os.path.split(file_path)[1]
     #print("\nSCRIPT interper starting on... "+script_name)
 
-    tokenizer(tokens, fd)
+    tokenizer(tokens, fd, '')
     searchForDBs(tokens,lookup,required_dbs,script_name, project, req_words, keyword_db)
     remove_bl_dbs(required_dbs,db_blacklist)
     
@@ -328,7 +362,7 @@ def projectInterper(project_path,lookup,required_dbs,db_blacklist,req_words,keyw
 
     folder_queue.sort(key=getNumber)
 
-    print(folder_queue)
+    #print(folder_queue)
 
     for queue_item in folder_queue:
         folder=queue_item[1]
@@ -351,11 +385,11 @@ projectInterper(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\2020", look
 # searchForDBs(tokens,lookup,required_dbs)
 # remove_bl_dbs(required_dbs,db_blacklist)
 print("\n\n\n")
-#print(required_dbs)
+print(required_dbs)
 #print("\n\n\n")
 #print(db_blacklist)
 #print("\n\n\n")
-print(lookup)
+#print(lookup)
 
 workbook = openpyxl.Workbook()
 
@@ -423,5 +457,5 @@ for index, entry in enumerate(keyword_db):
         cellref.value=entry[i]
 
 
-workbook.save(filename='sqlinterperROUGHResults.xlsx')
+workbook.save(filename=r'C:\Users\rober\Documents\Coding\Work_Projects\PRGX\SQLInterper\sqlinterperROUGHResults.xlsx')
 
