@@ -8,117 +8,144 @@ db_blacklist = []
 keyword_db = []
 
 #for case where a comment appears in middle of text
-def parseComment(c,tokens,input):
-    comment_word = []
-    if c =="-":
-        comment_word.append("-")
-        comment_word.append("-")
-        d = input.read(1)
-        while d !=" " and d !="\n" and d !="\t" and d!="": #POTENTIAL FOR INFINITELOOP
-            if not d:
-                print("End of file COMMENT")
-                break
-            comment_word.append(d)
-            d=input.read(1)
-        tokens.append("".join(comment_word))
-    else:
-        close_char = c
-        comment_word.append(c)
 
+
+def peekChar(input):
+    c=input.read(1)
+    input.seek(input.tell()-1)
+    return c
+
+def skipSpaces(input):
+    c=input.read(1)
+    while c == ' ' or c == '\n' or c == '\t':
         c=input.read(1)
-        while c!=close_char: #POTENTIAL FOR INFINITELOOP
-            if not c:
-                print("End of file")
-                break
-            comment_word.append(c)
-            c=input.read(1)
+    input.seek(input.tell()-1)
 
-        comment_word.append(c)
-        tokens.append("".join(comment_word))
-
-def wordParser(word, input, tokens, end):
-    #global cont
-    ignore_bracket=False
+def readString(input, str_start):
+    sqlString=[]
+    sqlString.append(str_start)
 
     c = input.read(1)
-
-    #case where start of potential token is a multiline comment
-    if c == "\"" or c == "'":
-        parseComment(c,tokens,input)
-        return
-    #case where start of potential token is a line comment
-    elif c=="-":
-        word.append(c)
-        next_char =input.read(1)
-        if next_char =="-":
-            while c!="\n" and c!="": #POTENTIAL FOR INFINITELOOP
-                word.append(c)
-                c=input.read(1)
-
-            return
-    elif c=="(":
-        print("START BRACKET PARSE")
-        lst_tokens=[]
-        tokenizer(lst_tokens,input,")")
-        word.append(lst_tokens)
-    else:
-        if c=="$":
-            ignore_bracket=True
-        #other case, where it isnt a comment
-        while c != " " and c != '\n' and c !='\t': #POTENTIAL FOR INFINITELOOP
-            word.append(c)
-            c=input.read(1)
-
-            #edge case where there is a comment right after a character
-            if c=="-":
-                d=input.read(1)
-                if d=="-":
-                    parseComment(d,tokens,input)
-                else:
-                    word.append(c)
-                    word.append(d)
-                    c=input.read(1)
-            elif c == "\"" or c =="'":
-                parseComment(c,tokens,input)
-                c=input.read(1)
-            elif c == "$":
-                ignore_bracket=True
-            elif (c=="(" or c==")") and ignore_bracket==False:
-                input.seek(input.tell()-1)
-                c=" " ## unget c, end loop so that start of next tokenizer loop will be "("
-        
-
-    
-def tokenizer(tokens, input, end):
-    #global cont
-    cont = True
-    word = []
-
-    while cont:
-        wordParser(word, input, tokens, end)
-
-        if(word == []):
-            continue
-
+    while c!=str_start:
+        sqlString.append(c)
         c=input.read(1)
-        #print("c: "+c+" || end: "+end, c==end)
-        if c==end or word[len(word)-2]==end:
-            cont=False
-            print("ENDING CONT LOOP")
-        else:
+    sqlString.append(str_start)
+
+    return "".join(sqlString)
+
+def readComment(input):
+    comment = ["-","-"]
+
+    c=input.read(1)
+    while c!= '\n' and c!="":
+        comment.append(c)
+        c=input.read(1)
+    
+    return "".join(comment)
+
+def readWord(input):
+    word = []
+    bracket_stop = True
+
+    c=input.read(1)
+    while c!= '\n' and c!=' ' and c!='\t' and c!= "":
+        if c == "$":
+            #print("!VARDETECTED")
+            bracket_stop = False
+        elif (c=="-" and peekChar(input) == "-") or (c=="*" and peekChar(input) == "/") or c=="\'" or c=="\"":
             input.seek(input.tell()-1)
+            break
+        elif (c=="(" or c==")") and bracket_stop:
+            input.seek(input.tell()-1)
+            #print("BRACKETBRAKE")
+            break
+        elif (c==")"): #basically one $ only skips one closed bracket; to deal with edge case that a variable ends a bracket
+            bracket_stop = True
+        
+        word.append(c)
+        c=input.read(1)
 
-        if isinstance(word[0],list):
-            tokens.append(word[0])
-            print(word[0])
-            word=[]
+    return "".join(word)
+
+def readBracket(input,endLoc):
+    bracket_tokens=[]
+    token=""
+
+    skipSpaces(input)
+    c=input.read(1)
+    while c!=")":
+        if input.tell() == endLoc:
+            break
+        elif c== '\"' or c== "\'":
+            #print("B.readString", end=" ")
+            token = readString(input, c)
+        elif c == "-" and peekChar(input)=="-":
+            #print("B.readComment", end=" ")
+            token = readComment(input)
+        elif c=="/" and peekChar(input)=="*":
+            token="/*"
+            input.read(1)
+        elif c=="*" and peekChar(input) == "/":
+            token="*/"
+            input.read(1)
+        elif c=="(":
+            #print("B.readBracket starto")
+            token=readBracket(input,endLoc)
         else:
-            tokens.append("".join(word))
-            print("word: "+("".join(word)))
-            word=[]
-        
+            #print("B.readWord", end=" ")
+            input.seek(input.tell()-1)
+            token=readWord(input)
 
+        if token != "":
+            bracket_tokens.append(token)
         
+        skipSpaces(input)
+        c=input.read(1)
+    
+    return bracket_tokens
+
+def tokenizer(input,tokens):
+    token = ""
+    input.seek(0,2) 
+    end_loc=input.tell()    
+    input.seek(0)
+    
+    skipSpaces(input)
+    c=input.read(1)
+    while c!="":
+        if input.tell() == end_loc:
+            break
+        elif c== '\"' or c== "\'":
+            token = readString(input, c)
+            #print("readString", end=" ")
+        elif c == "-" and peekChar(input)=="-":
+            token = readComment(input)
+            #print("readComment", end=" ")
+        elif c=="/" and peekChar(input)=="*":
+            token="/*"
+            input.read(1)
+        elif c=="*" and peekChar(input) == "/":
+            token="*/"
+            input.read(1)
+        elif c=="(":
+            token=readBracket(input,end_loc)
+            #print("readbracket",end=" ")
+            #print(token)
+        else:
+            #print("readWord", end=" ")
+            input.seek(input.tell()-1)
+            token=readWord(input)
+            
+        #print("c: "+c +" || end: "+end+ " "+c==end)
+
+        if token != "":
+            tokens.append(token)
+        
+        skipSpaces(input)
+        c=input.read(1)
+
+    return tokens
+
 
 def removeExtraChars(string):
     #removes brackets and semicolons from end of db entry
@@ -317,15 +344,15 @@ def scriptInterper(file_path, lookup, required_dbs, db_blacklist, project, req_w
     script_name = os.path.split(file_path)[1]
     #print("\nSCRIPT interper starting on... "+script_name)
 
-    tokenizer(tokens, fd, '')
+    tokenizer(fd, tokens)
     searchForDBs(tokens,lookup,required_dbs,script_name, project, req_words, keyword_db)
     remove_bl_dbs(required_dbs,db_blacklist)
     
-    # print("\n\n\n")
-    # for token in tokens:
-    #     print(token, end=' || ')
-    # print("\n")
-    # print(len(tokens))
+    #print("\n\n\n")
+    #for token in tokens:
+    #    print(token, end=' || ')
+    #print("\n")
+    print(len(tokens))
 
     cont=True
 
@@ -372,9 +399,9 @@ def projectInterper(project_path,lookup,required_dbs,db_blacklist,req_words,keyw
 
 projectInterper(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\2020", lookup, required_dbs, db_blacklist, [], keyword_db)
 
-#folderInterper(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\2020\1_AP" lookup, required_dbs, db_blacklist,["Bashas"])
+#folderInterper(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\2020\1_AP", lookup, required_dbs, db_blacklist,["Bashas"], keyword_db)
 
-#scriptInterper(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\2020\3_CMAH\3_BAS_CMAH_setup.sql", lookup, required_dbs,db_blacklist,"5_DLS",["Bashas"], keyword_db)
+#scriptInterper(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\2020\1_AP\0_BAS_ADPVA_AP.sql", lookup, required_dbs,db_blacklist,"AP",["Bashas"], keyword_db)
 
 # testpath=Path(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\BASHAS 1_AP")
 # lst=os.listdir(testpath)
@@ -390,6 +417,16 @@ print(required_dbs)
 #print(db_blacklist)
 #print("\n\n\n")
 #print(lookup)
+
+def listToString(lst):
+    output="("
+    for entry in lst:
+        if isinstance(entry, list):
+            output= output+listToString(entry)
+        else:
+            output = output + " "+entry
+    output = output+")"
+    return output
 
 workbook = openpyxl.Workbook()
 
@@ -454,7 +491,11 @@ keywords.column_dimensions['D'].width = 30
 for index, entry in enumerate(keyword_db):
     for i in range(5):
         cellref=keywords.cell(row=index+2,column=i+1)
-        cellref.value=entry[i]
+        if isinstance(entry[i],list):
+            
+            cellref.value = listToString(entry[i]) #' '.join(entry[i])
+        else:
+            cellref.value=entry[i]
 
 
 workbook.save(filename=r'C:\Users\rober\Documents\Coding\Work_Projects\PRGX\SQLInterper\sqlinterperROUGHResults.xlsx')
