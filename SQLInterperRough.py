@@ -4,7 +4,7 @@ from pathlib import Path
 
 lookup = []
 required_dbs = []
-db_blacklist = []
+db_blacklist = [("sys.columns", False, "init"),("sys.indexes", False, "init")]
 keyword_db = []
 
 
@@ -167,12 +167,13 @@ def tokenizer(input, tokens):
 
 def removeExtraChars(string):
     #removes brackets and semicolons from end of db entry
+    #mildly deprecated, dont need to remove brackets now
     if string[len(string)-1] == ")" or string[len(string)-1] == ";":
         return string[0:len(string)-1]
     else:
         return string
 
-def dbLookup(token, lookup):
+def dbLookup(token, lookup, db_blacklist):
 
     #print(lookup)
     #fixes common syntax of just using dbo => workdb.dbo
@@ -180,7 +181,7 @@ def dbLookup(token, lookup):
         token="$(#&USEDB#&)."+token
 
     #fixes commonly not using dbo at all lol
-    if len(token)>1 and token[1].casefold() == "_":
+    elif token[0].casefold() != "$" and token.find("$") == -1 and not searchtf(token, db_blacklist):
         token="$(#&USEDB#&).dbo."+token
 
     token=removeSqBrackets(token)
@@ -239,13 +240,13 @@ def addNewVar(search, replace, lookup, comment_out):
     lookup.append((search,replace,comment_out))
     return
 
-def searchForDBs(tokens,lookup,required_dbs,script_name,project, req_words, keyword_db, tokensLen):
+def searchForDBs(tokens,lookup,required_dbs,db_blacklist,script_name,project, req_words, keyword_db, tokensLen):
     comment_out=False
 
     for index in range(len(tokens)):
         token=tokens[index]
         if isinstance(token,list):
-            searchForDBs(token,lookup,required_dbs,script_name,project,req_words,keyword_db, tokensLen)
+            searchForDBs(token,lookup,required_dbs,db_blacklist,script_name,project,req_words,keyword_db, tokensLen)
         elif token =="/*":
             comment_out=True
             #print("/*")
@@ -253,12 +254,13 @@ def searchForDBs(tokens,lookup,required_dbs,script_name,project, req_words, keyw
             comment_out=False
             #print("*/")
         elif token.casefold() == ":setvar":
-            addNewVar(tokens[index+1],tokens[index+2], lookup, comment_out)
-            index=index+2
-            #print("setvar")
+            if comment_out == False:
+                addNewVar(tokens[index+1],tokens[index+2], lookup, comment_out)
+                index=index+2
+                #print("setvar")
         elif token.casefold() == "use":
-            pot_working_db = dbLookup(tokens[index+1],lookup)
-            if pot_working_db != tokens[index+1]:
+            pot_working_db = dbLookup(tokens[index+1],lookup,db_blacklist)
+            if pot_working_db != tokens[index+1] and comment_out == False: # if dblookup changed something I think?
                 if reqWordCheck(pot_working_db,req_words):
                     #print("?? USE " + pot_working_db)
                     addNewVar("#&USEDB#&","\""+pot_working_db+"\"",lookup,comment_out)
@@ -266,7 +268,7 @@ def searchForDBs(tokens,lookup,required_dbs,script_name,project, req_words, keyw
             if isinstance(tokens[index+1],list):
                 keyword_db.append(("from", tokens[index+1], comment_out, script_name, project))
             else:    
-                new_entry=dbLookup(tokens[index+1],lookup)
+                new_entry=dbLookup(tokens[index+1],lookup,db_blacklist)
                 if appendDupCheck(new_entry, required_dbs) and reqWordCheck(new_entry,req_words):
                     #print("!!! from: " + new_entry)
                     required_dbs.append((new_entry, comment_out, script_name, project))
@@ -277,7 +279,7 @@ def searchForDBs(tokens,lookup,required_dbs,script_name,project, req_words, keyw
             if isinstance(tokens[index+1],list):
                 keyword_db.append(("join", tokens[index+1], comment_out, script_name, project))
             else:
-                new_entry=dbLookup(tokens[index+1],lookup)
+                new_entry=dbLookup(tokens[index+1],lookup,db_blacklist)
                 if appendDupCheck(new_entry, required_dbs) and reqWordCheck(new_entry,req_words):
                     required_dbs.append((new_entry, comment_out, script_name, project))
                 if reqWordCheck(new_entry, req_words):
@@ -286,7 +288,7 @@ def searchForDBs(tokens,lookup,required_dbs,script_name,project, req_words, keyw
             if isinstance(tokens[index+1],list):
                 keyword_db.append(("into", tokens[index+1], comment_out, script_name, project))
             else:            
-                new_entry=dbLookup(tokens[index+1],lookup)
+                new_entry=dbLookup(tokens[index+1],lookup,db_blacklist)
                 if appendDupCheck(new_entry,db_blacklist):
                     #print("--- into: "+new_entry)
                     db_blacklist.append((new_entry, comment_out, script_name))
@@ -306,7 +308,7 @@ def searchForDBs(tokens,lookup,required_dbs,script_name,project, req_words, keyw
                         db_blacklist.append((removeSqBrackets(tokens[index+1]), comment_out, script_name))
                     keyword_db.append(("with",tokens[index+1], comment_out, script_name, project))
                     if isinstance(tokens[index+3], list):
-                        searchForDBs(tokens[index+3],lookup,required_dbs,script_name,project,req_words,keyword_db, tokensLen)
+                        searchForDBs(tokens[index+3],lookup,required_dbs,db_blacklist,script_name,project,req_words,keyword_db, tokensLen)
                     index=index+4
                     #print("with")
         elif token.casefold() == "drop":
@@ -318,10 +320,10 @@ def searchForDBs(tokens,lookup,required_dbs,script_name,project, req_words, keyw
                         continue
                     else:
                         if tokens[index+2].casefold() == "if" and tokens[index+3].casefold() == "exists":
-                            new_entry=dbLookup(tokens[index+4],lookup)
+                            new_entry=dbLookup(tokens[index+4],lookup,db_blacklist)
                             index=index+2
                         else:
-                            new_entry=dbLookup(tokens[index+2],lookup)
+                            new_entry=dbLookup(tokens[index+2],lookup,db_blacklist)
                         if appendDupCheck(new_entry,db_blacklist):
                             #print("+++ drop: "+new_entry)
                             db_blacklist.append((new_entry, comment_out, script_name))
@@ -332,7 +334,7 @@ def searchForDBs(tokens,lookup,required_dbs,script_name,project, req_words, keyw
             if isinstance(tokens[index+1],list):
                 keyword_db.append(("update", tokens[index+1], comment_out, script_name, project))
             else:            
-                new_entry = dbLookup(tokens[index+1],lookup)
+                new_entry = dbLookup(tokens[index+1],lookup,db_blacklist)
                 if appendDupCheck(new_entry,db_blacklist):
                     db_blacklist.append((new_entry, comment_out, script_name))
                 index=index+1
@@ -372,13 +374,13 @@ def scriptInterper(file_path, lookup, required_dbs, db_blacklist, project, req_w
     #print("\nSCRIPT interper starting on... "+script_name)
 
     tokenizer(inpStream, tokens)
-    searchForDBs(tokens,lookup,required_dbs,script_name, project, req_words, keyword_db, len(tokens))
+    searchForDBs(tokens,lookup,required_dbs,db_blacklist,script_name, project, req_words, keyword_db, len(tokens))
     remove_bl_dbs(required_dbs,db_blacklist)
     
-    #print("\n\n\n")
-    #for token in tokens:
-    #    print(token, end=' || ')
-    #print("\n")
+    print("\n\n\n")
+    for token in tokens:
+        print(token, end=' || ')
+    print("\n")
     print(len(tokens))
 
     cont=True
@@ -424,11 +426,11 @@ def projectInterper(project_path,lookup,required_dbs,db_blacklist,req_words,keyw
         folderInterper(folder,lookup,required_dbs,db_blacklist,req_words,keyword_db)
 
 
-projectInterper(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\2020", lookup, required_dbs, db_blacklist, [], keyword_db)
+#projectInterper(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\2020", lookup, required_dbs, db_blacklist, [], keyword_db)
 
 #folderInterper(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\2020\1_AP", lookup, required_dbs, db_blacklist,["Bashas"], keyword_db)
 
-#scriptInterper(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\2020\1_AP\0_BAS_ADPVA_AP.sql", lookup, required_dbs,db_blacklist,"AP",["Bashas"], keyword_db)
+scriptInterper(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\2020\8_MVMT\02_BAS_WCSGGD_SETUP.sql", lookup, required_dbs,db_blacklist,"AP",[], keyword_db)
 
 # testpath=Path(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\BASHAS 1_AP")
 # lst=os.listdir(testpath)
@@ -451,8 +453,10 @@ def listToString(lst):
         if isinstance(entry, list):
             output= output+listToString(entry)
         else:
-            output = output + " "+entry
-    output = output+")"
+            output=output+entry+" "
+    if len(output)>1:
+        output=output[:len(output)-1] +")"
+    else: output=output+")"
     return output
 
 workbook = openpyxl.Workbook()
