@@ -78,7 +78,7 @@ def readWord(input):
     while c!= '\n' and c!=' ' and c!='\t' and c!= "" and c!="\r" and c!="\r\n":
         if c == "$":
             bracket_stop = False
-        elif (c=="-" and input.peekChar() == "-") or (c=="*" and input.peekChar() == "/") or c=="\'" or c=="\"":
+        elif (c=="-" and input.peekChar() == "-") or (c=="*" and input.peekChar() == "/") or c=="\'" or c=="\"" or c==",":
             input.unreadChar()
             break
         elif (c=="(" or c==")") and bracket_stop:
@@ -112,6 +112,8 @@ def readBracket(input,endLoc):
         elif c=="*" and input.peekChar() == "/":
             token="*/"
             input.readChar()
+        elif c==",":
+            token=","
         elif c=="(":
             token=readBracket(input,endLoc)
         else:
@@ -143,6 +145,8 @@ def tokenizer(input, tokens):
         elif c=="/" and input.peekChar()=="*":
             token="/*"
             input.readChar()
+        elif c==",":
+            token=","
         elif c=="*" and input.peekChar() == "/":
             token="*/"
             input.readChar()
@@ -198,7 +202,7 @@ def dbLookup(token, lookup):
                     changed = True
             
             if changed == False:
-                    token=token.replace("$", "COULDNOTFIND")
+                    token=token.replace("$", "Could not find var = ")
 
             find_val = token.find("$")
         
@@ -294,14 +298,16 @@ def searchForDBs(tokens,lookup,required_dbs,script_name,project, req_words, keyw
             print(tokens[index+1], end = " || ")
             print(tokens[index+2])
             if not(isinstance(tokens[index+2],list)) and tokens[index+2].casefold() == "as":
-                while not(isinstance(tokens[index+2],list)) and index+2 < tokensLen and tokens[index+2].casefold() == "as":
+                while index+3 < tokensLen and not(isinstance(tokens[index+2],list)) and tokens[index+2].casefold() == "as":
                     print(tokens[index+1], end= " ")
                     print(tokens[index+2], end= " ")
-                    #print(tokens[index+3])
+                    print(tokens[index+3])
                     if appendDupCheck(tokens[index+1],db_blacklist):
                         db_blacklist.append((removeSqBrackets(tokens[index+1]), comment_out, script_name))
                     keyword_db.append(("with",tokens[index+1], comment_out, script_name, project))
-                    index=index+2
+                    if isinstance(tokens[index+3], list):
+                        searchForDBs(tokens[index+3],lookup,required_dbs,script_name,project,req_words,keyword_db, tokensLen)
+                    index=index+4
                     #print("with")
         elif token.casefold() == "drop":
             if isinstance(tokens[index+1],list):
@@ -441,7 +447,7 @@ print(required_dbs)
 
 def listToString(lst):
     output="("
-    for entry in lst:
+    for index,entry in enumerate(lst):
         if isinstance(entry, list):
             output= output+listToString(entry)
         else:
