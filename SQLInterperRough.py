@@ -4,7 +4,7 @@ from pathlib import Path
 
 lookup = []
 required_dbs = []
-db_blacklist = [("sys.columns", False, "init"),("sys.indexes", False, "init")]
+db_blacklist = []
 keyword_db = []
 
 
@@ -166,26 +166,31 @@ def tokenizer(input, tokens):
 
     return tokens
 
-def removeExtraChars(string):
+
+#def removeExtraChars(string):
     #removes brackets and semicolons from end of db entry
     #mildly deprecated, dont need to remove brackets now
-    if string[len(string)-1] == ")" or string[len(string)-1] == ";":
-        return string[0:len(string)-1]
-    else:
-        return string
+    #if string[len(string)-1] == ")" or string[len(string)-1] == ";":
+        #return string[0:len(string)-1]
+    #else:
+        #return string
+
 
 def dbLookup(token, lookup, db_blacklist):
 
     #print(lookup)
+    token=removeSqBrackets(token)
+
     #fixes common syntax of just using dbo => workdb.dbo
     if token[0:3].lower() == "dbo":
         token="$(#&USEDB#&)."+token
 
     #fixes commonly not using dbo at all lol
-    elif token[0].casefold() != "$" and token.find("$") == -1 and not searchtf(token, db_blacklist):
+    elif token[0].casefold() != "$" and not searchtf(token, db_blacklist):
         token="$(#&USEDB#&).dbo."+token
+#    else: 
+#        print("NOCHANGE TOKEN: "+token)
 
-    token=removeSqBrackets(token)
     find_val = token.find("$")
 
     if find_val != -1:
@@ -204,14 +209,14 @@ def dbLookup(token, lookup, db_blacklist):
                     changed = True
             
             if changed == False:
-                    token=token.replace("$", "Could not find var = ")
+                    token=token.replace("$", "#")
 
             find_val = token.find("$")
         
-        return removeExtraChars(token)
+        return token
 
     else: 
-        return removeExtraChars(token)
+        return token
 
 def appendDupCheck(name,array):
     for items in array:
@@ -230,6 +235,9 @@ def reqWordCheck(name,req_words):
 def removeSqBrackets(string):
     string=string.replace("[","")
     string=string.replace("]","")
+    if string[len(string)-1] == ";":
+        string=string[0:len(string)-1]
+    
     return string
 
 def addNewVar(search, replace, lookup, comment_out):
@@ -256,7 +264,7 @@ def searchForDBs(tokens,lookup,required_dbs,db_blacklist,script_name,project, re
             #print("*/")
         elif token.casefold() == ":setvar":
             if comment_out == False:
-                addNewVar(tokens[index+1],tokens[index+2], lookup, comment_out)
+                addNewVar(tokens[index+1],removeSqBrackets(tokens[index+2]), lookup, comment_out)
                 index=index+2
                 #print("setvar")
         elif token.casefold() == "use":
@@ -350,10 +358,16 @@ def searchtf(string, array):
 def remove_bl_dbs(required_dbs,db_blacklist):
     pop_offset=0
     pop_queue = []
+    sys=["sys.columns","sys.indexes","sysindexes","sysobjects","INFORMATION_SCHEMA.TABLES"]
 
     for k in range(len(required_dbs)):    
         if searchtf((required_dbs[k])[0],db_blacklist):
            pop_queue.append(k)
+        else:
+            #popping selects with sys object
+            for entry in sys:
+                if (required_dbs[k])[0].find(entry) != -1:
+                    pop_queue.append(k)
 
         #HAVE TO FIND A STRING WHICH IS NEEDED FOR ANY DB ENTRY HERE, I guess by user input?      
         #elif len((required_dbs[k])[0]) < len("BASHAS") or (required_dbs[k])[0].upper().find("BASHAS") == -1:
@@ -362,6 +376,7 @@ def remove_bl_dbs(required_dbs,db_blacklist):
 
     #print(pop_queue)
 
+    #actually pop it
     for to_pop in pop_queue:
         required_dbs.pop(to_pop-pop_offset)
         pop_offset=pop_offset+1
@@ -429,9 +444,9 @@ def projectInterper(project_path,lookup,required_dbs,db_blacklist,req_words,keyw
 
 projectInterper(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\2020", lookup, required_dbs, db_blacklist, [], keyword_db)
 
-#folderInterper(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\2020\1_AP", lookup, required_dbs, db_blacklist,["Bashas"], keyword_db)
+#folderInterper(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\StaterBrothers", lookup, required_dbs, db_blacklist,[], keyword_db)
 
-#scriptInterper(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\2020\8_MVMT\02_BAS_WCSGGD_SETUP.sql", lookup, required_dbs,db_blacklist,"AP",[], keyword_db)
+#scriptInterper(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\2020\6_SCAN\1_BAS_DAILY_SCAN.sql", lookup, required_dbs,db_blacklist,"AP",[], keyword_db)
 
 # testpath=Path(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\BASHAS 1_AP")
 # lst=os.listdir(testpath)
