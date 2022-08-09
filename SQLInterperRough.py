@@ -15,23 +15,24 @@ class inputStream:
         self.index = 0 #points to next unread character
     
     def getEnd(self):
-        return len(self.stream)-1
+        return len(self.stream)
     
     def peekChar(self):
-        if self.index < len(self.stream)-1:
-            return self.stream[self.index+1]
-        else:
-            return ""
-    
-    def readChar(self):
-        if self.index < len(self.stream)-1:
-            self.index=self.index+1
+        if self.index < len(self.stream):
             return self.stream[self.index]
         else:
             return ""
     
+    def readChar(self):
+        if self.index < len(self.stream):
+            self.index=self.index+1
+            return self.stream[self.index-1]
+        else:
+            return ""
+    
     def unreadChar(self):
-        self.index = self.index - 1
+        if self.index != 0:
+            self.index = self.index - 1
         return
 
     def getPosition(self):
@@ -61,7 +62,7 @@ def readString(input, str_start):
     return "".join(sqlString)
 
 def readComment(input):
-    comment = ["-","-"]
+    comment = ["-"]
 
     c=input.readChar()
     while c!= '\n' and c!="":
@@ -377,11 +378,11 @@ def scriptInterper(file_path, lookup, required_dbs, db_blacklist, project, req_w
     searchForDBs(tokens,lookup,required_dbs,db_blacklist,script_name, project, req_words, keyword_db, len(tokens))
     remove_bl_dbs(required_dbs,db_blacklist)
     
-    print("\n\n\n")
-    for token in tokens:
-        print(token, end=' || ')
-    print("\n")
-    print(len(tokens))
+    #print("\n\n\n")
+    #for token in tokens:
+    #    print(token, end=' || ')
+    #print("\n")
+    #print(len(tokens))
 
     cont=True
 
@@ -426,11 +427,11 @@ def projectInterper(project_path,lookup,required_dbs,db_blacklist,req_words,keyw
         folderInterper(folder,lookup,required_dbs,db_blacklist,req_words,keyword_db)
 
 
-#projectInterper(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\2020", lookup, required_dbs, db_blacklist, [], keyword_db)
+projectInterper(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\2020", lookup, required_dbs, db_blacklist, [], keyword_db)
 
 #folderInterper(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\2020\1_AP", lookup, required_dbs, db_blacklist,["Bashas"], keyword_db)
 
-scriptInterper(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\2020\8_MVMT\02_BAS_WCSGGD_SETUP.sql", lookup, required_dbs,db_blacklist,"AP",[], keyword_db)
+#scriptInterper(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\2020\8_MVMT\02_BAS_WCSGGD_SETUP.sql", lookup, required_dbs,db_blacklist,"AP",[], keyword_db)
 
 # testpath=Path(r"C:\Users\rober\Documents\Coding\Work_Projects\PRGX\BASHAS 1_AP")
 # lst=os.listdir(testpath)
