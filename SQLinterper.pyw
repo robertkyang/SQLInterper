@@ -31,8 +31,8 @@ class MainUI(QMainWindow):
         sublayout1.addWidget(pathlabel)
 
         self.pathLE = QLineEdit()
-        self.pathLE.isReadOnly=False    
-        self.pathLE.setText("HELLO")
+        self.pathLE.setReadOnly(True)    
+        self.pathLE.setText("C:/")
         sublayout1.addWidget(self.pathLE)
         sublayout1.setSpacing(20)
         self.generalLayout.addLayout(sublayout1)
@@ -49,9 +49,11 @@ class MainUI(QMainWindow):
         sublayout3 = QHBoxLayout()
         runButton = QPushButton()
         runButton.setText("Run Analysis")
+        runButton.clicked.connect(self.printtext)
         sublayout3.addWidget(runButton)
         changeButton = QPushButton()
         changeButton.setText("Change Path")
+        changeButton.clicked.connect(self.__select_path)
         sublayout3.addWidget(changeButton)
 
         radioLayout = QVBoxLayout()
@@ -61,12 +63,13 @@ class MainUI(QMainWindow):
         radioLayout.addWidget(self.projectSelect)
         self.fullProjectSelect = QRadioButton()
         self.fullProjectSelect.setText("Analyze subfolders as projects")
+        self.fullProjectSelect.toggle()
         radioLayout.addWidget(self.fullProjectSelect)
         sublayout3.addLayout(radioLayout)
 
         self.generalLayout.addLayout(sublayout3)
 
-        self._generate_options("#$%NONE#$%","")
+        self.__generate_options("#$%NONE#$%","")
 
         self.printtext()
 
@@ -74,7 +77,7 @@ class MainUI(QMainWindow):
         self.setCentralWidget(self._centralWidget)
         self._centralWidget.setLayout(self.generalLayout)
     
-    def _generate_options(self,name,ranDt):
+    def __generate_options(self,name,ranDt):
         panel = QWidget()
         panel.setStyleSheet("background-color: rgb(200, 200, 200);")
         sublayout4 = QVBoxLayout(panel)
@@ -90,6 +93,13 @@ class MainUI(QMainWindow):
 
         self.generalLayout.addWidget(panel)
     
+    def __start_anaylsis(self):
+        path = self.pathLE.displayText()
+
+    def __select_path(self):
+        file = QFileDialog.getExistingDirectory(self, "Select Directory")
+        self.pathLE.setText(file)
+
     def printtext(self):
         print(self.pathLE.displayText())
 
