@@ -13,7 +13,12 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QPushButton,
     QFileDialog,
-    QRadioButton
+    QRadioButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QAbstractItemView,
+    QAbstractScrollArea,
+    QCheckBox,
 )
 
 class inputStream:
@@ -403,43 +408,58 @@ def folderInterper(folder_path, lookup, required_dbs, db_blacklist, req_words, k
     script_queue = []
     project=os.path.split(folder_path)[1]
     
-    folder_contents = os.listdir(folder_path) 
-    
-    for file in folder_contents:
-#        print(os.path.join(folder_path, file))
-#        print(os.path.splitext(os.path.join(folder_path, file))[1].casefold())
-        if os.path.splitext(os.path.join(folder_path, file))[1].casefold() == ".sql".casefold():
-            script_queue.append(os.path.join(folder_path,file))
-    
-    for script in script_queue:
-        print("\n"+script)
-        scriptInterper(script, lookup, required_dbs, db_blacklist,project,req_words, keyword_db)
-    
-    #os.path.splitext(filepath)[1]
+    try:
+        folder_contents = os.listdir(folder_path)
+    except FileNotFoundError:
+            errorMsg = QMessageBox()
+            errorMsg.setWindowTitle("SQL Script Analyzer Error")
+            errorMsg.setText("Error: Could not find a folder's path")
+            errorMsg.setIcon(QMessageBox.Icon.Critical)
+            errorMsg.exec()
+    else:
+        for file in folder_contents:
+    #        print(os.path.join(folder_path, file))
+    #        print(os.path.splitext(os.path.join(folder_path, file))[1].casefold())
+            if os.path.splitext(os.path.join(folder_path, file))[1].casefold() == ".sql".casefold():
+                script_queue.append(os.path.join(folder_path,file))
+        
+        for script in script_queue:
+            print("\n"+script)
+            scriptInterper(script, lookup, required_dbs, db_blacklist,project,req_words, keyword_db)
+        
+        #os.path.splitext(filepath)[1]
 
 def getNumber(unsorted_item):
     return int((unsorted_item[0])[0])
 
 def projectInterper(project_path,lookup,required_dbs,db_blacklist,req_words,keyword_db):
-    folder_contents = os.listdir(project_path)
-    folder_queue = []
-
-    for item in folder_contents:
-        sub_path = os.path.join(project_path,item)
-        if os.path.isdir(sub_path):
-            folder_queue.append(((os.path.split(sub_path)[1]).split("_"),sub_path))
-
     try:
-        folder_queue.sort(key=getNumber)
-    except ValueError:
-        folder_queue.sort()
+        folder_contents = os.listdir(project_path)
+    except FileNotFoundError:
+            errorMsg = QMessageBox()
+            errorMsg.setWindowTitle("SQL Script Analyzer Error")
+            errorMsg.setText("Error: Could not find a folder's path")
+            errorMsg.setIcon(QMessageBox.Icon.Critical)
+            errorMsg.exec()
+    else:        
+        folder_queue = []
 
-    #print(folder_queue)
+        for item in folder_contents:
+            sub_path = os.path.join(project_path,item)
+            if os.path.isdir(sub_path):
+                folder_queue.append(((os.path.split(sub_path)[1]).split("_"),sub_path))
 
-    for queue_item in folder_queue:
-        folder=queue_item[1]
-        print(folder)
-        folderInterper(folder,lookup,required_dbs,db_blacklist,req_words,keyword_db)
+        try:
+            folder_queue.sort(key=getNumber)
+        except ValueError:
+            folder_queue.sort()
+
+        #print(folder_queue)
+
+        for queue_item in folder_queue:
+            folder=queue_item[1]
+            print(folder)
+            folderInterper(folder,lookup,required_dbs,db_blacklist,req_words,keyword_db)
 
 def listToString(lst):
     output="("
@@ -467,10 +487,13 @@ class MainUI(QMainWindow):
         self.keyword_db = []
         self.req_words = []
         self.layLst = []
+        self.dialogLst = []
 
-        self.setWindowTitle('SQL Table Analyzer')
+        self.setWindowTitle('SQL Script Analyzer')
+        self.setMaximumHeight(220)
+        self.setMaximumWidth(500)
         #self.setFixedSize(435, 235)
-        self.generalLayout =  QVBoxLayout()
+        self.generalLayout = QVBoxLayout()
         
         sublayout1 = QHBoxLayout()
         pathlabel = QLabel()
@@ -521,8 +544,6 @@ class MainUI(QMainWindow):
 
         self.__generate_options("#$%NONE#$%","")
 
-        self.printtext()
-
         self._centralWidget = QWidget() #dummy widget
         self.setCentralWidget(self._centralWidget)
         self._centralWidget.setLayout(self.generalLayout)
@@ -569,6 +590,7 @@ class MainUI(QMainWindow):
             sublayout5.addWidget(excelGenButton)
             searchButton = QPushButton()
             searchButton.setText("Search for table history")
+            searchButton.clicked.connect(self.__all_tables_history)
             sublayout5.addWidget(searchButton)
             listRqDBButton = QPushButton()
             listRqDBButton.setText("List required dbs")
@@ -576,7 +598,12 @@ class MainUI(QMainWindow):
             sublayout5.addWidget(listRqDBButton)
             sublayoutOld.addLayout(sublayout5)
             self.layLst.append(sublayout5)
-             
+
+            self.dbUI = requiredListUI(self.required_dbs)
+            self.dialogLst.append(self.dbUI)
+
+            self.historyUI = tableHistoryUI(self.keyword_db)
+            self.dialogLst.append(self.historyUI)
     
     def __start_anaylsis(self):
 
@@ -599,17 +626,30 @@ class MainUI(QMainWindow):
         else:
             folderInterper(path,self.lookup,self.required_dbs,self.db_blacklist,self.req_words,self.keyword_db)
         
+        #if doesn't quite work; need dbUI to be initialized... maybe move initialization to the #$%NONE#$% case
+        #if self.lookup == [] and self.required_dbs == [] and self.db_blacklist == [] and self.keyword_db == []:
+        #    self.__generate_options("#$%NONE#$%", datetime.now().strftime("%m-%d %H:%M:%S"))
+        #else:
         self.__generate_options(name, datetime.now().strftime("%m-%d %H:%M:%S"))
+
+        self.dbUI.required_dbs = self.required_dbs
+
+        finMsg = QMessageBox()
+        finMsg.setWindowTitle("SQL Script Analyzer")
+        finMsg.setText("Finished Analyzing Scripts")
+        finMsg.setIcon(QMessageBox.Icon.Information)
+        finMsg.exec()
 
     def __select_path(self):
         file = QFileDialog.getExistingDirectory(self, "Select Directory")
         self.pathLE.setText(file)
 
     def __list_dbs(self):
-        print(self.required_dbs)
+        self.dbUI.lst_gen()
+        self.dbUI.show()
 
-    def printtext(self):
-        print(self.pathLE.displayText())
+    def __all_tables_history(self):
+        self.historyUI.show()
 
     def __generate_excel(self):
         file_name, _ = QFileDialog.getSaveFileName(self,"Save Results","","Excel Workbook (*.xlsx)")
@@ -683,11 +723,202 @@ class MainUI(QMainWindow):
                 else:
                     cellref.value=entry[i]
 
-        workbook.save(filename=file_name)
+        try:
+            workbook.save(filename=file_name)
+            finMsg = QMessageBox()
+            finMsg.setWindowTitle("SQL Script Analyzer")
+            finMsg.setText("File saved successfully.")
+            finMsg.setIcon(QMessageBox.Icon.Information)
+            finMsg.exec()
+        except FileNotFoundError:
+            errorMsg = QMessageBox()
+            errorMsg.setWindowTitle("SQL Script Analyzer Error")
+            errorMsg.setText("Error while saving file: File is being edited or could not be found.")
+            errorMsg.setIcon(QMessageBox.Icon.Critical)
+            errorMsg.exec()
+        except BaseException:
+            errorMsg = QMessageBox()
+            errorMsg.setWindowTitle("SQL Script Analyzer Error")
+            errorMsg.setText("Unexpected Error while saving file.")
+            errorMsg.setIcon(QMessageBox.Icon.Critical)
+            errorMsg.exec()
         
+class requiredListUI(QMainWindow):
+    
+    def __init__(self, required_dbs, parent=None):
+        super(requiredListUI, self).__init__(parent)
+        self.required_dbs = required_dbs
+        self.setWindowTitle("SQL Analyzer: Required Tables")
 
+        self.generalLayout = QVBoxLayout()
+        sublayout = QHBoxLayout()
+        self.showCommentsBox = QCheckBox()
+        self.showCommentsBox.setText("Show commented out tables")
+        sublayout.addWidget(self.showCommentsBox)
+        self.showWorkDBBox = QCheckBox()
+        self.showWorkDBBox.setText("Show potential working database")
+        self.showWorkDBBox.setChecked(True)
+        sublayout.addWidget(self.showWorkDBBox)
+        regenButton = QPushButton()
+        regenButton.setText("Regenerate List")
+        regenButton.clicked.connect(self.lst_gen)
+        sublayout.addWidget(regenButton)
+
+        self.generalLayout.addLayout(sublayout)
         
+        self.showcaseTable = QTableWidget()
+        self.showcaseTable.setRowCount(1)
+        self.showcaseTable.setColumnCount(4)
+        self.showcaseTable.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.showcaseTable.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
+        self.generalLayout.addWidget(self.showcaseTable)
+
+        self.lst_gen()
+
+        self._centralWidget = QWidget() #dummy widget
+        self.setCentralWidget(self._centralWidget)
+        self._centralWidget.setLayout(self.generalLayout)
+
+    def lst_gen(self):
+        self.showcaseTable.clearContents()
+        self.showcaseTable.setRowCount(len(self.required_dbs)+1)
+        self.showcaseTable.setItem(0,0,QTableWidgetItem("Project"))
+        self.showcaseTable.setItem(0,1,QTableWidgetItem("Script Name"))
+        self.showcaseTable.setItem(0,2,QTableWidgetItem("Database Name"))
+        self.showcaseTable.setItem(0,3,QTableWidgetItem("Extra Info"))
         
+        nextRow = 1
+        for index, entry in enumerate(self.required_dbs):
+            extraInfostr=""
+            if entry[1] == True:
+                if self.showCommentsBox.isChecked() == False:
+                    continue
+                extraInfostr="commented out,"
+            if entry[0].casefold().find("_w.".casefold()) != -1:
+                if self.showWorkDBBox.isChecked() == False:
+                    continue
+                extraInfostr="potential workingDB,"+ extraInfostr
+            if extraInfostr != "":
+                extraInfostr = extraInfostr[:-1]
+            extraInfo = QTableWidgetItem(extraInfostr)
+            self.showcaseTable.setItem(nextRow,3,extraInfo)
+
+            projectName = QTableWidgetItem(entry[3])
+            self.showcaseTable.setItem(nextRow,0,projectName)
+            scriptName = QTableWidgetItem(entry[2])
+            self.showcaseTable.setItem(nextRow,1,scriptName)
+            tableName = QTableWidgetItem(entry[0])
+            self.showcaseTable.setItem(nextRow,2,tableName)
+            nextRow = nextRow + 1
+        self.showcaseTable.resizeColumnsToContents()
+        
+class tableHistoryUI(QMainWindow):
+    
+    def __init__(self, keywords_db, parent=None):
+        super(tableHistoryUI, self).__init__(parent)
+        self.keyword_db = keywords_db
+        self.generalLayout = QVBoxLayout()
+
+        sublayout = QHBoxLayout()
+        searchLabel = QLabel()
+        searchLabel.setText("Search: ")
+        sublayout.addWidget(searchLabel)
+        self.searchbox = QLineEdit()
+        sublayout.addWidget(self.searchbox)
+        searchButton = QPushButton()
+        searchButton.setText("🔍")
+        searchButton.clicked.connect(self.table_gen)
+        sublayout.addWidget(searchButton)
+        self.generalLayout.addLayout(sublayout)
+
+        filtertxt = QLabel()
+        filtertxt.setText("Filter out: ")
+        self.generalLayout.addWidget(filtertxt)
+
+        optionSublayout = QHBoxLayout()
+        self.commentOutBox = QCheckBox()
+        self.commentOutBox.setText("Commented Out")
+        optionSublayout.addWidget(self.commentOutBox)
+        self.dropBox = QCheckBox()
+        self.dropBox.setText("drop")
+        optionSublayout.addWidget(self.dropBox)
+        self.fromBox = QCheckBox()
+        self.fromBox.setText("from")
+        optionSublayout.addWidget(self.fromBox)
+        self.intoBox = QCheckBox()
+        self.intoBox.setText("into")
+        optionSublayout.addWidget(self.intoBox)
+        self.generalLayout.addLayout(optionSublayout)
+
+        optionSubLayout2 = QHBoxLayout()
+        self.joinBox = QCheckBox()
+        self.joinBox.setText("join")
+        optionSubLayout2.addWidget(self.joinBox)
+        self.updateBox = QCheckBox()
+        self.updateBox.setText("update")
+        optionSubLayout2.addWidget(self.updateBox)
+        self.withBox = QCheckBox()
+        self.withBox.setText("with")
+        optionSubLayout2.addWidget(self.withBox)
+        self.generalLayout.addLayout(optionSubLayout2)
+
+        self.showcaseTable = QTableWidget()
+        self.showcaseTable.setRowCount(1)
+        self.showcaseTable.setColumnCount(5)
+        self.showcaseTable.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
+        self.generalLayout.addWidget(self.showcaseTable)
+
+
+        self._centralWidget = QWidget() #dummy widget
+        self.setCentralWidget(self._centralWidget)
+        self._centralWidget.setLayout(self.generalLayout)
+    
+    def table_gen(self):
+        self.showcaseTable.clearContents()
+        self.showcaseTable.setRowCount(len(self.keyword_db)+1)
+        self.showcaseTable.setItem(0,0,QTableWidgetItem("Keyword"))
+        self.showcaseTable.setItem(0,1,QTableWidgetItem("Table Name"))
+        self.showcaseTable.setItem(0,2,QTableWidgetItem("Comment Out"))
+        self.showcaseTable.setItem(0,3,QTableWidgetItem("Script"))
+        self.showcaseTable.setItem(0,3,QTableWidgetItem("Project"))
+
+        nextRow = 1
+        for entry in self.keyword_db:
+            for i in range(5):
+                if i == 0:
+                    if entry[i] == "drop" and self.dropBox.isChecked():
+                        break
+                    elif entry[i] == "from" and self.fromBox.isChecked():
+                        break
+                    elif entry[i] == "into" and self.intoBox.isChecked():
+                        break
+                    elif entry[i] == "join" and self.joinBox.isChecked():
+                        break
+                    elif entry[i] == "update" and self.updateBox.isChecked():
+                        break
+                    elif entry[i] == "with" and self.withBox.isChecked():
+                        break
+                
+                if i == 1:
+                    if entry[i].find(self.searchbox.displayText()) == -1:
+                        break
+                
+                if i==2:
+                    if entry[i] and self.commentOutBox.isChecked():
+                        break
+
+                #cellref=keywords.cell(row=index+2,column=i+1)
+                outputStr=""
+                if isinstance(entry[i],list):
+                    outputStr = listToString(entry[i]) #' '.join(entry[i])
+                else:
+                    outputStr=entry[i]
+
+                outputCell = QTableWidgetItem(outputStr)
+                self.showcaseTable.setItem(nextRow,i,outputCell)
+                
+            nextRow = nextRow+1
+
 
 window = MainUI()
 #window.setGeometry(100, 100, 280, 80)
