@@ -1,4 +1,5 @@
 import sys, os, openpyxl
+from xmlrpc.client import boolean
 from PyQt6.QtCore import QSize, Qt
 from datetime import datetime
 from PyQt6.QtWidgets import (
@@ -633,6 +634,7 @@ class MainUI(QMainWindow):
         self.__generate_options(name, datetime.now().strftime("%m-%d %H:%M:%S"))
 
         self.dbUI.required_dbs = self.required_dbs
+        self.historyUI.keyword_db = self.keyword_db
 
         finMsg = QMessageBox()
         finMsg.setWindowTitle("SQL Script Analyzer")
@@ -649,6 +651,7 @@ class MainUI(QMainWindow):
         self.dbUI.show()
 
     def __all_tables_history(self):
+        self.historyUI.table_gen()
         self.historyUI.show()
 
     def __generate_excel(self):
@@ -782,12 +785,12 @@ class requiredListUI(QMainWindow):
     def lst_gen(self):
         self.showcaseTable.clearContents()
         self.showcaseTable.setRowCount(len(self.required_dbs)+1)
-        self.showcaseTable.setItem(0,0,QTableWidgetItem("Project"))
-        self.showcaseTable.setItem(0,1,QTableWidgetItem("Script Name"))
-        self.showcaseTable.setItem(0,2,QTableWidgetItem("Database Name"))
-        self.showcaseTable.setItem(0,3,QTableWidgetItem("Extra Info"))
+        self.showcaseTable.setHorizontalHeaderItem(0,QTableWidgetItem("Project"))
+        self.showcaseTable.setHorizontalHeaderItem(1,QTableWidgetItem("Script Name"))
+        self.showcaseTable.setHorizontalHeaderItem(2,QTableWidgetItem("Database Name"))
+        self.showcaseTable.setHorizontalHeaderItem(3,QTableWidgetItem("Extra Info"))
         
-        nextRow = 1
+        nextRow = 0
         for index, entry in enumerate(self.required_dbs):
             extraInfostr=""
             if entry[1] == True:
@@ -811,6 +814,8 @@ class requiredListUI(QMainWindow):
             self.showcaseTable.setItem(nextRow,2,tableName)
             nextRow = nextRow + 1
         self.showcaseTable.resizeColumnsToContents()
+        self.showcaseTable.setRowCount(nextRow)
+
         
 class tableHistoryUI(QMainWindow):
     
@@ -860,14 +865,20 @@ class tableHistoryUI(QMainWindow):
         self.withBox = QCheckBox()
         self.withBox.setText("with")
         optionSubLayout2.addWidget(self.withBox)
+        filterAll = QPushButton()
+        filterAll.setText("Filter all")
+        filterAll.clicked.connect(self.filter_all)
+        optionSubLayout2.addWidget(filterAll)
         self.generalLayout.addLayout(optionSubLayout2)
 
         self.showcaseTable = QTableWidget()
         self.showcaseTable.setRowCount(1)
         self.showcaseTable.setColumnCount(5)
+        self.showcaseTable.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.showcaseTable.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
         self.generalLayout.addWidget(self.showcaseTable)
 
+        self.table_gen()
 
         self._centralWidget = QWidget() #dummy widget
         self.setCentralWidget(self._centralWidget)
@@ -876,48 +887,91 @@ class tableHistoryUI(QMainWindow):
     def table_gen(self):
         self.showcaseTable.clearContents()
         self.showcaseTable.setRowCount(len(self.keyword_db)+1)
-        self.showcaseTable.setItem(0,0,QTableWidgetItem("Keyword"))
-        self.showcaseTable.setItem(0,1,QTableWidgetItem("Table Name"))
-        self.showcaseTable.setItem(0,2,QTableWidgetItem("Comment Out"))
-        self.showcaseTable.setItem(0,3,QTableWidgetItem("Script"))
-        self.showcaseTable.setItem(0,3,QTableWidgetItem("Project"))
+        self.showcaseTable.setHorizontalHeaderItem(0,QTableWidgetItem("Keyword"))
+        self.showcaseTable.setHorizontalHeaderItem(1,QTableWidgetItem("Table Name"))
+        self.showcaseTable.setHorizontalHeaderItem(2,QTableWidgetItem("Commented Out T/F"))
+        self.showcaseTable.setHorizontalHeaderItem(3,QTableWidgetItem("Script"))
+        self.showcaseTable.setHorizontalHeaderItem(4,QTableWidgetItem("Project"))
 
-        nextRow = 1
+        nextRow = 0
+        maxNameLen = 0
         for entry in self.keyword_db:
             for i in range(5):
                 if i == 0:
                     if entry[i] == "drop" and self.dropBox.isChecked():
+                        nextRow = nextRow-1
                         break
                     elif entry[i] == "from" and self.fromBox.isChecked():
+                        nextRow = nextRow-1
                         break
                     elif entry[i] == "into" and self.intoBox.isChecked():
+                        nextRow = nextRow-1
                         break
                     elif entry[i] == "join" and self.joinBox.isChecked():
+                        nextRow = nextRow-1
                         break
                     elif entry[i] == "update" and self.updateBox.isChecked():
+                        nextRow = nextRow-1
                         break
                     elif entry[i] == "with" and self.withBox.isChecked():
+                        nextRow = nextRow-1
                         break
                 
                 if i == 1:
-                    if entry[i].find(self.searchbox.displayText()) == -1:
-                        break
+                    if not isinstance(entry[i],list):                    
+                        if entry[i].casefold().find(self.searchbox.displayText().casefold()) == -1:
+                            clearCell = QTableWidgetItem("")
+                            self.showcaseTable.setItem(nextRow,0,clearCell)
+                            nextRow = nextRow - 1
+                            break
+
+                        if len(entry[i])>maxNameLen:
+                            maxNameLen = len(entry[i])
+                    else:
+                        if self.searchbox.displayText() != "":
+                            clearCell = QTableWidgetItem("")
+                            self.showcaseTable.setItem(nextRow,0,clearCell)
+                            nextRow = nextRow - 1
+                            break
                 
-                if i==2:
+                if i == 2:
                     if entry[i] and self.commentOutBox.isChecked():
+                        for i in range(2):
+                            clearCell = QTableWidgetItem("")
+                            self.showcaseTable.setItem(nextRow,i,clearCell)
+                        nextRow = nextRow - 1
                         break
 
                 #cellref=keywords.cell(row=index+2,column=i+1)
                 outputStr=""
                 if isinstance(entry[i],list):
                     outputStr = listToString(entry[i]) #' '.join(entry[i])
+                elif isinstance(entry[i],bool):
+                    if entry[i]:
+                        outputStr = "TRUE"
+                    else:
+                        outputStr = "FALSE"
                 else:
                     outputStr=entry[i]
 
                 outputCell = QTableWidgetItem(outputStr)
                 self.showcaseTable.setItem(nextRow,i,outputCell)
-                
+
             nextRow = nextRow+1
+        
+        self.showcaseTable.setRowCount(nextRow+1)
+        self.showcaseTable.resizeColumnsToContents()
+        #if maxNameLen !=0:
+        #    self.showcaseTable.setColumnWidth(1,maxNameLen)
+
+    def filter_all(self):
+        self.commentOutBox.setChecked(True)
+        self.dropBox.setChecked(True)
+        self.fromBox.setChecked(True)
+        self.intoBox.setChecked(True)
+        self.joinBox.setChecked(True)
+        self.updateBox.setChecked(True)
+        self.withBox.setChecked(True)
 
 
 window = MainUI()
